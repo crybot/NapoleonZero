@@ -53,6 +53,7 @@ while IFS= read -r fen; do
   echo "position fen $fen" >& ${COPROC[1]}
   echo "go depth $DEPTH" >& ${COPROC[1]}
 
+  { 
   while IFS= read -t 0.5 -u ${COPROC[0]} -r line; do
     if [[ $line == bestmove* ]]; then # Done searching
       break
@@ -63,7 +64,10 @@ while IFS= read -r fen; do
       echo "setoption Record" >& ${COPROC[1]} # Tell the engine to record the evaluations in a csv file
       break
     fi
-  done
+  done } || { wait $COPROC_PID;
+              echo "Restoring failed coprocess...";
+              coproc $ENGINE;
+              echo "setoption Record" >& ${COPROC[1]}; } 
   COUNT=$((COUNT+1))
 done < $POSITIONS
 
