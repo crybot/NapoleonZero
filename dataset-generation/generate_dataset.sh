@@ -15,12 +15,12 @@ fi
 POSITIONS=$1
 DEPTH=$2
 ENGINE=../NapoleonPP
+COLS=$(tput cols)
 
 function progress() {
   p=$1
-  l=$(tput cols)
   str=" $p%\r"
-  for i in $( seq 0 $(( l * p / 100 - ${#str} )) ); do
+  for i in $( seq 0 $(( COLS * p / 100 - ${#str} )) ); do
     echo -n "█"
   done
   echo -ne "$str"
@@ -51,13 +51,13 @@ function restart() {
 }
 
 while IFS= read -r fen; do
-  # print a progress bar if this is the main thread
-  if [[ $MAIN_THREAD == true ]]; then
-    progress $((100 * COUNT / LINES))
-  fi
   # echo "EVALUATING $fen"
   echo "position fen $fen" >& ${COPROC[1]}
   echo "go depth $DEPTH" >& ${COPROC[1]}
+  # print a progress bar if this is the main thread
+  if [[ $MAIN_THREAD == true ]] && ((  $COUNT % 100 == 0 )) ; then
+    progress $((100 * COUNT / LINES))
+  fi
 
   { 
   while IFS= read -u ${COPROC[0]} -r line || restart; do
