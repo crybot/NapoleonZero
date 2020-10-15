@@ -39,37 +39,60 @@ function ctrl_c() {
 }
 
 
+read -t 5 -u ${COPROC[0]} -r line || echo "Engine timed-out during initialization"
 echo "setoption Record" >& ${COPROC[1]} # Tell the engine to record the evaluations in a csv file
 LINES=$(wc -l < $POSITIONS)
 COUNT=1
 
 function restart() {
-  wait $COPROC_PID;
   echo "Restoring failed coprocess...";
+  wait $COPROC_PID;
   coproc $ENGINE;
+  read -t 5 -u ${COPROC[0]} -r line || echo "Engine timed-out upon restart"
   echo "setoption Record" >& ${COPROC[1]};
+  echo "Coprocess restored...";
+}
+
+function isready() {
+  echo "isready" >& ${COPROC[1]}
+  IFS= read -t 5 -u ${COPROC[0]} -r ready
+  return [[ $ready == readyok* ]]
 }
 
 while IFS= read -r fen; do
-  # echo "EVALUATING $fen"
   echo "position fen $fen" >& ${COPROC[1]}
-  echo "go depth $DEPTH" >& ${COPROC[1]}
+
+  # if [[ isready ]]; then
+  #   echo "Engine not ready: $fen"
+  # fi
+
   # print a progress bar if this is the main thread
   if [[ $MAIN_THREAD == true ]] && ((  $COUNT % 100 == 0 )) ; then
     progress $((100 * COUNT / LINES))
   fi
 
-  { 
-  while IFS= read -u ${COPROC[0]} -r line || restart; do
+  echo "go depth $DEPTH" >& ${COPROC[1]}
+  while ! read -t 0.5 -u ${COPROC[0]} -r line; do
+    echo "Sending go command again: $fen"
+    echo "go depth $DEPTH" >& ${COPROC[1]}
+  done
+
+  # while IFS= read -t 5 -u ${COPROC[0]} -r line || echo "Timed-out after go command: $fen"; do
+  while : ; do
     if [[ $line == bestmove* ]]; then # Done searching
       break
-    fi
-    if [[ $line == Position* ]]; then # Error in the position
+    elif [[ $line == Position* ]]; then # Error in the position
       restart
       break
+    elif [[ $line != info* ]]; then
+      echo "Unexpected output with position $fen: $line"
+      break
+    else 
+      read -u ${COPROC[0]} -r line || break
     fi
-  done } || { restart; } 
+  done 
   COUNT=$((COUNT+1))
+
 done < $POSITIONS
 
 echo "quit" >& ${COPROC[1]}
